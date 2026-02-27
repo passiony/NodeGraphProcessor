@@ -3,18 +3,20 @@ using System.Collections.Generic;
 using UnityEngine;
 using System;
 using System.Reflection;
-using Unity.Jobs;
 using System.Linq;
+using Sirenix.OdinInspector;
 
 namespace GraphProcessor
 {
 	public delegate IEnumerable< PortData > CustomPortBehaviorDelegate(List< SerializableEdge > edges);
 	public delegate IEnumerable< PortData > CustomPortTypeBehaviorDelegate(string fieldName, string displayName, object value);
 
+	[BoxGroup]
+	[HideLabel]
 	[Serializable]
 	public abstract class BaseNode
 	{
-		[SerializeField]
+		[SerializeField][HideInInspector]
 		internal string nodeCustomName = null; // The name of the node in case it was renamed by a user
 
 		/// <summary>
@@ -45,9 +47,9 @@ namespace GraphProcessor
         public virtual bool         isLocked => nodeLock; 
 
         //id
-        public string				GUID;
+        [HideInInspector]public string				GUID;
 
-		public int					computeOrder = -1;
+        [HideInInspector]public int					computeOrder = -1;
 
 		/// <summary>Tell wether or not the node can be processed. Do not check anything from inputs because this step happens before inputs are sent to the node</summary>
 		public virtual bool			canProcess => true;
@@ -62,27 +64,27 @@ namespace GraphProcessor
 		/// Container of input ports
 		/// </summary>
 		[NonSerialized]
-		public readonly NodeInputPortContainer	inputPorts;
+		public NodeInputPortContainer	inputPorts;
 		/// <summary>
 		/// Container of output ports
 		/// </summary>
 		[NonSerialized]
-		public readonly NodeOutputPortContainer	outputPorts;
+		public NodeOutputPortContainer	outputPorts;
 
 		//Node view datas
-		public Rect					position;
+		[HideInInspector]public Rect					position;
 		/// <summary>
 		/// Is the node expanded
 		/// </summary>
-		public bool					expanded;
+		[HideInInspector]public bool					expanded;
 		/// <summary>
 		/// Is debug visible
 		/// </summary>
-		public bool					debug;
+		[HideInInspector]public bool					debug;
 		/// <summary>
 		/// Node locked state
 		/// </summary>
-        public bool                 nodeLock;
+		[HideInInspector]public bool                 nodeLock;
 
         public delegate void		ProcessDelegate();
 
@@ -218,6 +220,22 @@ namespace GraphProcessor
 		public void Initialize(BaseGraph graph)
 		{
 			this.graph = graph;
+
+			if (inputPorts == null) 
+				inputPorts = new NodeInputPortContainer(this);
+			if (outputPorts == null) 
+				outputPorts = new NodeOutputPortContainer(this);
+			if (nodeFields == null) 
+				nodeFields = new Dictionary<string, NodeFieldInformation>();
+			if (customPortTypeBehaviorMap == null)
+				customPortTypeBehaviorMap = new Dictionary<Type, CustomPortTypeBehaviorDelegate>();
+			if (messages == null) 
+				messages = new List<string>(); 
+			
+			if (nodeFields.Count == 0)
+			{
+				InitializeInOutDatas();
+			}
 
 			ExceptionToLog.Call(() => Enable());
 
@@ -467,6 +485,8 @@ namespace GraphProcessor
 		{
 			bool changed  = false;
 
+			fieldsToUpdate ??= new Stack<PortUpdate>();
+			updatedFields ??= new HashSet<PortUpdate>();
 			fieldsToUpdate.Clear();
 			updatedFields.Clear();
 
@@ -513,8 +533,8 @@ namespace GraphProcessor
 		internal void DisableInternal()
 		{
 			// port containers are initialized in the OnEnable
-			inputPorts.Clear();
-			outputPorts.Clear();
+			inputPorts?.Clear();
+			outputPorts?.Clear();
 
 			ExceptionToLog.Call(() => Disable());
 		}

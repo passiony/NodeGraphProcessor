@@ -358,7 +358,7 @@ namespace GraphProcessor
 									foreach (var edge in pv.GetEdges().ToList())
 										Disconnect(edge);
 
-							nodeInspector.NodeViewRemoved(nodeView);
+							nodeInspector.NodeRemoved(nodeView.nodeTarget);
 							ExceptionToLog.Call(() => nodeView.OnRemoved());
 							graph.RemoveNode(nodeView.nodeTarget);
 							UpdateSerializedProperties();
@@ -598,7 +598,7 @@ namespace GraphProcessor
 
 		bool DoesSelectionContainsInspectorNodes()
 		{
-			var selectedNodes = selection.Where(s => s is BaseNodeView).ToList();
+			var selectedNodes = selection.Where(s => s is BaseNodeView).Select(s => (s as BaseNodeView).nodeTarget).ToList();
 			var selectedNodesNotInInspector = selectedNodes.Except(nodeInspector.selectedNodes).ToList();
 			var nodeInInspectorWithoutSelectedNodes = nodeInspector.selectedNodes.Except(selectedNodes).ToList();
 
@@ -916,16 +916,16 @@ namespace GraphProcessor
 			if (nodeInspector.previouslySelectedObject != Selection.activeObject)
 				nodeInspector.previouslySelectedObject = Selection.activeObject;
 
-			HashSet<BaseNodeView> selectedNodeViews = new HashSet<BaseNodeView>();
+			HashSet<BaseNode> selectedNodes = new HashSet<BaseNode>();
 			nodeInspector.selectedNodes.Clear();
 			foreach (var e in selection)
 			{
 				if (e is BaseNodeView v && this.Contains(v) && v.nodeTarget.needsInspector)
-					selectedNodeViews.Add(v);
+					selectedNodes.Add(v.nodeTarget);
 			}
 
-			nodeInspector.UpdateSelectedNodes(selectedNodeViews);
-			if (Selection.activeObject != nodeInspector && selectedNodeViews.Count > 0)
+			nodeInspector.UpdateSelectedNodes(selectedNodes);
+			if (Selection.activeObject != nodeInspector && selectedNodes.Count > 0)
 				Selection.activeObject = nodeInspector;
 		}
 

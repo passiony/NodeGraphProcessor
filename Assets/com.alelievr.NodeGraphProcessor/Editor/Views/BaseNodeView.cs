@@ -9,25 +9,27 @@ using System.Collections;
 using System.Linq;
 using UnityEditor.UIElements;
 using System.Text.RegularExpressions;
-
+using Sirenix.OdinInspector;
 using Status = UnityEngine.UIElements.DropdownMenuAction.Status;
 using NodeView = UnityEditor.Experimental.GraphView.Node;
 
 namespace GraphProcessor
 {
+	[BoxGroup]
+	[HideReferenceObjectPicker]
 	[NodeCustomEditor(typeof(BaseNode))]
 	public class BaseNodeView : NodeView
 	{
 		public BaseNode							nodeTarget;
 
-		public List< PortView >					inputPortViews = new List< PortView >();
-		public List< PortView >					outputPortViews = new List< PortView >();
+		[HideInInspector]public List< PortView >					inputPortViews = new List< PortView >();
+		[HideInInspector]public List< PortView >					outputPortViews = new List< PortView >();
 
 		public BaseGraphView					owner { private set; get; }
 
 		protected Dictionary< string, List< PortView > > portsPerFieldName = new Dictionary< string, List< PortView > >();
 
-        public VisualElement 					controlsContainer;
+		[HideInInspector]public VisualElement 					controlsContainer;
 		protected VisualElement					debugContainer;
 		protected VisualElement					rightTitleContainer;
 		protected VisualElement					topPortContainer;
@@ -46,7 +48,7 @@ namespace GraphProcessor
 
 		protected virtual bool					hasSettings { get; set; }
 
-        public bool								initializing = false; //Used for applying SetPosition on locked node at init.
+		[HideInInspector]public bool								initializing = false; //Used for applying SetPosition on locked node at init.
 
         readonly string							baseNodeStyle = "GraphProcessorStyles/BaseNodeView";
 
