@@ -11,12 +11,16 @@ namespace GraphProcessor
 		public SerializableEdge		serializedEdge { get { return userData as SerializableEdge; } }
 
 		readonly string				edgeStyle = "GraphProcessorStyles/EdgeView";
+		static StyleSheet			cachedEdgeStyle;
 
 		protected BaseGraphView		owner => ((input ?? output) as PortView).owner.owner;
 
 		public EdgeView() : base()
 		{
-			styleSheets.Add(Resources.Load<StyleSheet>(edgeStyle));
+			if (cachedEdgeStyle == null)
+				cachedEdgeStyle = Resources.Load<StyleSheet>(edgeStyle);
+			styleSheets.Add(cachedEdgeStyle);
+
 			RegisterCallback<MouseDownEvent>(OnMouseDown);
 		}
 

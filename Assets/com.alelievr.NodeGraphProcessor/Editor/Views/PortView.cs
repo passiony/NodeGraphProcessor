@@ -29,6 +29,8 @@ namespace GraphProcessor
 		public int connectionCount => edges.Count;
 
 		readonly string portStyle = "GraphProcessorStyles/PortView";
+		static StyleSheet	cachedPortStyle;
+		static StyleSheet	cachedUserPortStyle;
 
         protected PortView(Direction direction, FieldInfo fieldInfo, PortData portData, BaseEdgeConnectorListener edgeConnectorListener)
             : base(portData.vertical ? Orientation.Vertical : Orientation.Horizontal, direction, Capacity.Multi, portData.displayType ?? fieldInfo.FieldType)
@@ -39,13 +41,17 @@ namespace GraphProcessor
 			this.portData = portData;
 			this.portName = fieldName;
 
-			styleSheets.Add(Resources.Load<StyleSheet>(portStyle));
+			if (cachedPortStyle == null)
+				cachedPortStyle = Resources.Load<StyleSheet>(portStyle);
+			styleSheets.Add(cachedPortStyle);
 
 			UpdatePortSize();
 
-			var userPortStyle = Resources.Load<StyleSheet>(userPortStyleFile);
-			if (userPortStyle != null)
-				styleSheets.Add(userPortStyle);
+			if (cachedUserPortStyle == null)
+				cachedUserPortStyle = Resources.Load<StyleSheet>(userPortStyleFile);
+			
+			if (cachedUserPortStyle != null)
+				styleSheets.Add(cachedUserPortStyle);
 			
 			if (portData.vertical)
 				AddToClassList("Vertical");

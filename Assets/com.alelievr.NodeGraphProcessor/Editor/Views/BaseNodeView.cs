@@ -51,6 +51,25 @@ namespace GraphProcessor
 		[HideInInspector]public bool								initializing = false; //Used for applying SetPosition on locked node at init.
 
         readonly string							baseNodeStyle = "GraphProcessorStyles/BaseNodeView";
+		static StyleSheet						cachedBaseNodeStyle;
+		static Dictionary<string, StyleSheet>	layoutStyleCache = new Dictionary<string, StyleSheet>();
+
+		struct InspectorFieldInfo
+		{
+			public FieldInfo field;
+			public string displayName;
+			public bool hasInputAttribute;
+			public bool hasOutputAttribute;
+			public bool isSerializeField;
+			public bool isNotSerialized;
+			public bool showAsDrawer;
+			public bool isVisibleIf;
+			public VisibleIf visibleIf;
+			public ShowInInspector showInInspector;
+		}
+
+		static Dictionary<Type, List<InspectorFieldInfo>> inspectorFieldsCache = new Dictionary<Type, List<InspectorFieldInfo>>();
+		static Dictionary<Type, List<FieldInfo>> settingFieldsCache = new Dictionary<Type, List<FieldInfo>>();
 
 		bool									settingsExpanded = false;
 
@@ -59,7 +78,7 @@ namespace GraphProcessor
 
 		#region  Initialization
 		
-		public void Initialize(BaseGraphView owner, BaseNode node)
+		public void Initialize(BaseGraphView owner, BaseNode node, bool skipRefresh = false)
 		{
 			nodeTarget = node;
 			this.owner = owner;
@@ -75,10 +94,21 @@ namespace GraphProcessor
 			node.onMessageRemoved += RemoveMessageView;
 			node.onPortsUpdated += a => schedule.Execute(_ => UpdatePortsForField(a)).ExecuteLater(0);
 
-            styleSheets.Add(Resources.Load<StyleSheet>(baseNodeStyle));
+			if (cachedBaseNodeStyle == null)
+				cachedBaseNodeStyle = Resources.Load<StyleSheet>(baseNodeStyle);
+            styleSheets.Add(cachedBaseNodeStyle);
 
             if (!string.IsNullOrEmpty(node.layoutStyle))
-                styleSheets.Add(Resources.Load<StyleSheet>(node.layoutStyle));
+			{
+				if (!layoutStyleCache.TryGetValue(node.layoutStyle, out var layoutStyle))
+				{
+					layoutStyle = Resources.Load<StyleSheet>(node.layoutStyle);
+					layoutStyleCache[node.layoutStyle] = layoutStyle;
+				}
+
+				if (layoutStyle != null)
+					styleSheets.Add(layoutStyle);
+			}
 
 			InitializeView();
 			InitializePorts();
@@ -94,7 +124,8 @@ namespace GraphProcessor
 
 			RefreshExpandedState();
 
-			this.RefreshPorts();
+			if (!skipRefresh)
+				this.RefreshPorts();
 
 			RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
 			RegisterCallback<DetachFromPanelEvent>(e => ExceptionToLog.Call(Disable));
@@ -237,12 +268,22 @@ namespace GraphProcessor
 				settings.Add(CreateSettingsView());
 				settingsContainer.Add(settings);
 				Add(settingsContainer);
-				
-				var fields = nodeTarget.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
-				foreach(var field in fields)
-					if(field.GetCustomAttribute(typeof(SettingAttribute)) != null) 
-						AddSettingField(field);
+				Type nodeType = nodeTarget.GetType();
+				if (!settingFieldsCache.TryGetValue(nodeType, out var settingFields))
+				{
+					settingFields = new List<FieldInfo>();
+					var fields = nodeType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+					foreach (var field in fields)
+					{
+						if (field.GetCustomAttribute(typeof(SettingAttribute)) != null)
+							settingFields.Add(field);
+					}
+					settingFieldsCache[nodeType] = settingFields;
+				}
+
+				foreach (var field in settingFields)
+					AddSettingField(field);
 			}
 		}
 
@@ -610,35 +651,59 @@ namespace GraphProcessor
 
 		protected virtual void DrawDefaultInspector(bool fromInspector = false)
 		{
-			var fields = nodeTarget.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-				// Filter fields from the BaseNode type since we are only interested in user-defined fields
-				// (better than BindingFlags.DeclaredOnly because we keep any inherited user-defined fields) 
-				.Where(f => f.DeclaringType != typeof(BaseNode));
+			Type nodeType = nodeTarget.GetType();
 
-			fields = nodeTarget.OverrideFieldOrder(fields).Reverse();
-
-			foreach (var field in fields)
+			if (!inspectorFieldsCache.TryGetValue(nodeType, out var fieldsInfo))
 			{
+				fieldsInfo = new List<InspectorFieldInfo>();
+				var fields = nodeType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+					.Where(f => f.DeclaringType != typeof(BaseNode));
+
+				foreach (var field in nodeTarget.OverrideFieldOrder(fields).Reverse())
+				{
+					var info = new InspectorFieldInfo();
+					info.field = field;
+					info.displayName = ObjectNames.NicifyVariableName(field.Name);
+					var inspectorNameAttribute = field.GetCustomAttribute<InspectorNameAttribute>();
+					if (inspectorNameAttribute != null)
+						info.displayName = inspectorNameAttribute.displayName;
+
+					info.hasInputAttribute = field.GetCustomAttribute(typeof(InputAttribute)) != null;
+					info.hasOutputAttribute = field.GetCustomAttribute(typeof(OutputAttribute)) != null;
+					info.isSerializeField = field.GetCustomAttribute(typeof(SerializeField)) != null;
+					info.isNotSerialized = field.IsNotSerialized;
+					info.showAsDrawer = field.GetCustomAttribute(typeof(ShowAsDrawer)) != null;
+					info.isVisibleIf = field.GetCustomAttribute(typeof(VisibleIf)) != null;
+					info.visibleIf = field.GetCustomAttribute(typeof(VisibleIf)) as VisibleIf;
+					info.showInInspector = field.GetCustomAttribute<ShowInInspector>();
+
+					fieldsInfo.Add(info);
+				}
+				inspectorFieldsCache[nodeType] = fieldsInfo;
+			}
+
+			foreach (var info in fieldsInfo)
+			{
+				var field = info.field;
+
 				//skip if the field is a node setting
-				if(field.GetCustomAttribute(typeof(SettingAttribute)) != null)
+				if (field.GetCustomAttribute(typeof(SettingAttribute)) != null)
 				{
 					hasSettings = true;
 					continue;
 				}
 
 				//skip if the field is not serializable
-				bool serializeField = field.GetCustomAttribute(typeof(SerializeField)) != null;
-				if((!field.IsPublic && !serializeField) || field.IsNotSerialized)
+				if ((!field.IsPublic && !info.isSerializeField) || info.isNotSerialized)
 				{
 					AddEmptyField(field, fromInspector);
 					continue;
 				}
 
 				//skip if the field is an input/output and not marked as SerializedField
-				bool hasInputAttribute         = field.GetCustomAttribute(typeof(InputAttribute)) != null;
-				bool hasInputOrOutputAttribute = hasInputAttribute || field.GetCustomAttribute(typeof(OutputAttribute)) != null;
-				bool showAsDrawer			   = !fromInspector && field.GetCustomAttribute(typeof(ShowAsDrawer)) != null;
-				if (!serializeField && hasInputOrOutputAttribute && !showAsDrawer)
+				bool hasInputOrOutputAttribute = info.hasInputAttribute || info.hasOutputAttribute;
+				bool showAsDrawer = !fromInspector && info.showAsDrawer;
+				if (!info.isSerializeField && hasInputOrOutputAttribute && !showAsDrawer)
 				{
 					AddEmptyField(field, fromInspector);
 					continue;
@@ -652,26 +717,19 @@ namespace GraphProcessor
 				}
 
 				// Hide the field if we want to display in in the inspector
-				var showInInspector = field.GetCustomAttribute<ShowInInspector>();
-				if (!serializeField && showInInspector != null && !showInInspector.showInNode && !fromInspector)
+				if (!info.isSerializeField && info.showInInspector != null && !info.showInInspector.showInNode && !fromInspector)
 				{
 					AddEmptyField(field, fromInspector);
 					continue;
 				}
 
-				var showInputDrawer = field.GetCustomAttribute(typeof(InputAttribute)) != null && field.GetCustomAttribute(typeof(SerializeField)) != null;
-				showInputDrawer |= field.GetCustomAttribute(typeof(InputAttribute)) != null && field.GetCustomAttribute(typeof(ShowAsDrawer)) != null;
+				var showInputDrawer = info.hasInputAttribute && info.isSerializeField;
+				showInputDrawer |= info.hasInputAttribute && info.showAsDrawer;
 				showInputDrawer &= !fromInspector; // We can't show a drawer in the inspector
 				showInputDrawer &= !typeof(IList).IsAssignableFrom(field.FieldType);
 
-				string displayName = ObjectNames.NicifyVariableName(field.Name);
-
-				var inspectorNameAttribute = field.GetCustomAttribute<InspectorNameAttribute>();
-				if (inspectorNameAttribute != null)
-					displayName = inspectorNameAttribute.displayName;
-
-				var elem = AddControlField(field, displayName, showInputDrawer);
-				if (hasInputAttribute)
+				var elem = AddControlField(field, info.displayName, showInputDrawer);
+				if (info.hasInputAttribute)
 				{
 					hideElementIfConnected[field.Name] = elem;
 
@@ -679,6 +737,21 @@ namespace GraphProcessor
 					if (portsPerFieldName.TryGetValue(field.Name, out var pvs))
 						if (pvs.Any(pv => pv.GetEdges().Count > 0))
 							elem.style.display = DisplayStyle.None;
+				}
+
+				// Handle VisibleIf (extracted from AddControlField to use cached data)
+				if (info.isVisibleIf && info.visibleIf != null && elem != null)
+				{
+					var visibleCondition = info.visibleIf;
+					var conditionField = nodeTarget.GetType().GetField(visibleCondition.fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+					if (conditionField != null)
+					{
+						visibleConditions.TryGetValue(visibleCondition.fieldName, out var list);
+						if (list == null)
+							list = visibleConditions[visibleCondition.fieldName] = new List<(object value, VisualElement target)>();
+						list.Add((visibleCondition.value, elem));
+						UpdateFieldVisibility(visibleCondition.fieldName, conditionField.GetValue(nodeTarget));
+					}
 				}
 			}
 		}
@@ -847,23 +920,6 @@ namespace GraphProcessor
 			{
 				// Make sure we create an empty placeholder if FieldFactory can not provide a drawer
 				if (showInputDrawer) AddEmptyField(field, false);
-			}
-
-			var visibleCondition = field.GetCustomAttribute(typeof(VisibleIf)) as VisibleIf;
-			if (visibleCondition != null)
-			{
-				// Check if target field exists:
-				var conditionField = nodeTarget.GetType().GetField(visibleCondition.fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-				if (conditionField == null)
-					Debug.LogError($"[VisibleIf] Field {visibleCondition.fieldName} does not exists in node {nodeTarget.GetType()}");
-				else
-				{
-					visibleConditions.TryGetValue(visibleCondition.fieldName, out var list);
-					if (list == null)
-						list = visibleConditions[visibleCondition.fieldName] = new List<(object value, VisualElement target)>();
-					list.Add((visibleCondition.value, element));
-					UpdateFieldVisibility(visibleCondition.fieldName, conditionField.GetValue(nodeTarget));
-				}
 			}
 
 			return element;

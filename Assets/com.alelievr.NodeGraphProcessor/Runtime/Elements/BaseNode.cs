@@ -618,6 +618,9 @@ namespace GraphProcessor
 			bool input = edge.inputNode == this;
 			NodePortContainer portCollection = (input) ? (NodePortContainer)inputPorts : outputPorts;
 
+			if (portCollection.Count == 0)
+				InitializePorts();
+
 			portCollection.Add(edge);
 
 			UpdateAllPorts();

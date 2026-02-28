@@ -748,6 +748,11 @@ namespace GraphProcessor
 
 		public void Initialize(BaseGraph graph)
 		{
+			if (this.graph == graph && nodeViews.Count > 0)
+				return;
+
+			var sw = System.Diagnostics.Stopwatch.StartNew();
+
 			if (this.graph != null)
 			{
 				SaveGraphToDisk();
@@ -806,6 +811,9 @@ namespace GraphProcessor
 
 			// Clear the dirty flag after initialization to prevent the asterisk from appearing on open
 			EditorUtility.ClearDirty(graph);
+
+			sw.Stop();
+			Debug.Log($"Graph initialized in {sw.ElapsedMilliseconds}ms ({graph.nodes.Count} nodes)");
 		}
 
 		public void ClearGraphElements()
@@ -854,7 +862,7 @@ namespace GraphProcessor
 
 			foreach (var node in graph.nodes)
 			{
-				var v = AddNodeView(node);
+				var v = AddNodeView(node, skipRefresh: true);
 			}
 		}
 
@@ -876,7 +884,7 @@ namespace GraphProcessor
 				edgeView.output = outputNodeView.GetPortViewFromFieldName(serializedEdge.outputFieldName, serializedEdge.outputPortIdentifier);
 
 
-				ConnectView(edgeView);
+				ConnectView(edgeView, skipRefresh: true);
 			}
 		}
 
@@ -957,7 +965,7 @@ namespace GraphProcessor
 			return view;
 		}
 
-		public BaseNodeView AddNodeView(BaseNode node)
+		public BaseNodeView AddNodeView(BaseNode node, bool skipRefresh = false)
 		{
 			var viewType = NodeProvider.GetNodeViewTypeFromType(node.GetType());
 
@@ -965,7 +973,7 @@ namespace GraphProcessor
 				viewType = typeof(BaseNodeView);
 
 			var baseNodeView = Activator.CreateInstance(viewType) as BaseNodeView;
-			baseNodeView.Initialize(this, node);
+			baseNodeView.Initialize(this, node, skipRefresh);
 			AddElement(baseNodeView);
 
 			nodeViews.Add(baseNodeView);
@@ -1133,7 +1141,7 @@ namespace GraphProcessor
 			return true;
 		}
 
-		public bool ConnectView(EdgeView e, bool autoDisconnectInputs = true)
+		public bool ConnectView(EdgeView e, bool autoDisconnectInputs = true, bool skipRefresh = false)
 		{
 			if (!CanConnectEdge(e, autoDisconnectInputs))
 				return false;
@@ -1176,8 +1184,11 @@ namespace GraphProcessor
 
 			edgeViews.Add(e);
 
-			inputNodeView.RefreshPorts();
-			outputNodeView.RefreshPorts();
+			if (!skipRefresh)
+			{
+				inputNodeView.RefreshPorts();
+				outputNodeView.RefreshPorts();
+			}
 
 			// In certain cases the edge color is wrong so we patch it
 			schedule.Execute(() => {
