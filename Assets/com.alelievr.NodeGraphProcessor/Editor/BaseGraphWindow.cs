@@ -29,9 +29,6 @@ namespace GraphProcessor
 		public event Action< BaseGraph >	graphLoaded;
 		public event Action< BaseGraph >	graphUnloaded;
 
-		/// <summary>
-		/// Called by Unity when the window is enabled / opened
-		/// </summary>
 		protected virtual void OnEnable()
 		{
 			InitializeRootView();
@@ -40,6 +37,15 @@ namespace GraphProcessor
 				LoadGraph();
 			else
 				reloadWorkaround = true;
+			
+			Undo.undoRedoPerformed += UpdateTitle;
+			Undo.postprocessModifications += PostProcessModifications;
+		}
+
+		UndoPropertyModification[] PostProcessModifications(UndoPropertyModification[] modifications)
+		{
+			UpdateTitle();
+			return modifications;
 		}
 
 		protected virtual void Update()
@@ -52,6 +58,21 @@ namespace GraphProcessor
 				LoadGraph();
 				reloadWorkaround = false;
 			}
+
+			// Update title every frame or when dirty to show asterisk
+			UpdateTitle();
+		}
+
+		protected void UpdateTitle()
+		{
+			if (graph == null) return;
+
+			string title = graph.name;
+			bool isDirty = EditorUtility.IsDirty(graph);
+
+			string newTitle = title + (isDirty ? "*" : "");
+			if (titleContent.text != newTitle)
+				titleContent.text = newTitle;
 		}
 
 		void LoadGraph()
@@ -68,8 +89,11 @@ namespace GraphProcessor
 		/// </summary>
 		protected virtual void OnDisable()
 		{
-			if (graph != null && graphView != null)
+			if (graph != null && graphView != null && EditorUtility.IsDirty(graph))
 				graphView.SaveGraphToDisk();
+
+			Undo.undoRedoPerformed -= UpdateTitle;
+			Undo.postprocessModifications -= PostProcessModifications;
 		}
 		
 		/// <summary>

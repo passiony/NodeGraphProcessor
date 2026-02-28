@@ -417,6 +417,7 @@ namespace GraphProcessor
 			{
 				graph.position = viewTransform.position;
 				graph.scale = viewTransform.scale;
+				EditorUtility.SetDirty(graph);
 			}
 		}
 
@@ -566,10 +567,11 @@ namespace GraphProcessor
 
 		protected virtual void KeyDownCallback(KeyDownEvent e)
 		{
-			if (e.keyCode == KeyCode.S && e.commandKey)
+			if (e.keyCode == KeyCode.S && e.actionKey)
 			{
 				SaveGraphToDisk();
 				e.StopPropagation();
+				e.PreventDefault();
 			}
 			else if(nodeViews.Count > 0 && e.commandKey && e.altKey)
 			{
@@ -762,13 +764,6 @@ namespace GraphProcessor
 
             connectorListener = CreateEdgeConnectorListener();
 
-			// When pressing ctrl-s, we save the graph
-			EditorSceneManager.sceneSaved += _ => SaveGraphToDisk();
-			RegisterCallback<KeyDownEvent>(e => {
-				if (e.keyCode == KeyCode.S && e.actionKey)
-					SaveGraphToDisk();
-			});
-
 			ClearGraphElements();
 
 			InitializeGraphView();
@@ -808,6 +803,9 @@ namespace GraphProcessor
 					}
 				}
 			}
+
+			// Clear the dirty flag after initialization to prevent the asterisk from appearing on open
+			EditorUtility.ClearDirty(graph);
 		}
 
 		public void ClearGraphElements()
@@ -1283,6 +1281,7 @@ namespace GraphProcessor
 		public void RegisterCompleteObjectUndo(string name)
 		{
 			Undo.RegisterCompleteObjectUndo(graph, name);
+			EditorUtility.SetDirty(graph);
 		}
 
 		public void SaveGraphToDisk()
@@ -1291,6 +1290,7 @@ namespace GraphProcessor
 				return ;
 
 			EditorUtility.SetDirty(graph);
+			AssetDatabase.SaveAssets();
 		}
 
 		public void ToggleView< T >() where T : PinnedElementView
