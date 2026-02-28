@@ -82,6 +82,9 @@ namespace GraphProcessor
 
 		CreateNodeMenuWindow						createNodeMenu;
 
+		public bool									isGrouping { get; private set; }
+		public bool									isReloading { get; private set; }
+
 		/// <summary>
 		/// Triggered just after the graph is initialized
 		/// </summary>
@@ -326,7 +329,7 @@ namespace GraphProcessor
 
         GraphViewChange GraphViewChangedCallback(GraphViewChange changes)
 		{
-			if (changes.elementsToRemove != null)
+			if (changes.elementsToRemove != null && !isGrouping)
 			{
 				RegisterCompleteObjectUndo("Remove Graph Elements");
 
@@ -476,7 +479,33 @@ namespace GraphProcessor
 			if (menuPosition == -1)
 				menuPosition = evt.menu.MenuItems().Count;
 			Vector2 position = (evt.currentTarget as VisualElement).ChangeCoordinatesTo(contentViewContainer, evt.localMousePosition);
-            evt.menu.InsertAction(menuPosition, "Create Group", (e) => AddSelectionsToGroup(AddGroup(new Group("Create Group", position))), DropdownMenuAction.AlwaysEnabled);
+            evt.menu.InsertAction(menuPosition, "Create Group", (e) => {
+				RegisterCompleteObjectUndo("Create Group");
+				isGrouping = true;
+				AddSelectionsToGroup(AddGroup(new Group("Create Group", position)));
+				isGrouping = false;
+			}, DropdownMenuAction.AlwaysEnabled);
+
+			// Add Ungroup option if a group is selected
+			var selectedGroups = selection.Where(s => s is GroupView).Cast<GroupView>().ToList();
+			if (selectedGroups.Count > 0)
+			{
+				evt.menu.InsertAction(menuPosition + 1, "Ungroup", (e) => {
+					RegisterCompleteObjectUndo("Ungroup");
+					isGrouping = true;
+					foreach (var gv in selectedGroups)
+					{
+						// Explicitly remove elements from the group so they stay in the graph
+						var elements = gv.containedElements.ToList();
+						foreach (var elem in elements)
+							gv.RemoveElement(elem);
+
+						graph.RemoveGroup(gv.group);
+						RemoveElement(gv);
+					}
+					isGrouping = false;
+				}, DropdownMenuAction.AlwaysEnabled);
+			}
 		}
 
 		/// <summary>
@@ -544,31 +573,11 @@ namespace GraphProcessor
 			}
 			else if(nodeViews.Count > 0 && e.commandKey && e.altKey)
 			{
-				//	Node Aligning shortcuts
+				//	Node Formatting shortcuts
 				switch(e.keyCode)
 				{
-					case KeyCode.LeftArrow:
-						nodeViews[0].AlignToLeft();
-						e.StopPropagation();
-						break;
-					case KeyCode.RightArrow:
-						nodeViews[0].AlignToRight();
-						e.StopPropagation();
-						break;
-					case KeyCode.UpArrow:
-						nodeViews[0].AlignToTop();
-						e.StopPropagation();
-						break;
-					case KeyCode.DownArrow:
-						nodeViews[0].AlignToBottom();
-						e.StopPropagation();
-						break;
-					case KeyCode.C:
-						nodeViews[0].AlignToCenter();
-						e.StopPropagation();
-						break;
-					case KeyCode.M:
-						nodeViews[0].AlignToMiddle();
+					case KeyCode.F:
+						nodeViews[0].AlignFlowSelectedNodes();
 						e.StopPropagation();
 						break;
 				}
@@ -687,6 +696,8 @@ namespace GraphProcessor
 
 		void ReloadView()
 		{
+			isReloading = true;
+
 			// Force the graph to reload his data (Undo have updated the serialized properties of the graph
 			// so the one that are not serialized need to be synchronized)
 			graph.Deserialize();
@@ -729,6 +740,8 @@ namespace GraphProcessor
 			}
 
 			UpdateNodeInspectorSelection();
+
+			isReloading = false;
 		}
 
 		public void Initialize(BaseGraph graph)
@@ -1081,6 +1094,8 @@ namespace GraphProcessor
 
         public void AddSelectionsToGroup(GroupView view)
         {
+			bool wasGrouping = isGrouping;
+			isGrouping = true;
             foreach (var selectedNode in selection)
             {
                 if (selectedNode is BaseNodeView)
@@ -1091,6 +1106,7 @@ namespace GraphProcessor
                     view.AddElement(selectedNode as BaseNodeView);
                 }
             }
+			isGrouping = wasGrouping;
         }
 
 		public void RemoveGroups()

@@ -35,7 +35,9 @@ namespace GraphProcessor
 			
 			this.AddManipulator(new ContextualMenuManipulator(BuildContextualMenu));
 			
-            headerContainer.Q<TextField>().RegisterCallback<ChangeEvent<string>>(TitleChangedCallback);
+            var titleField = headerContainer.Q<TextField>();
+			titleField.isDelayed = true;
+			titleField.RegisterCallback<ChangeEvent<string>>(TitleChangedCallback);
             titleLabel = headerContainer.Q<Label>();
 
             colorField = new ColorField{ value = group.color, name = "headerColorPicker" };
@@ -78,21 +80,41 @@ namespace GraphProcessor
                     continue;
 
                 if (!group.innerNodeGUIDs.Contains(node.nodeTarget.GUID))
+                {
+                    if (owner != null && !owner.isReloading && !owner.isGrouping)
+                    {
+                        owner.RegisterCompleteObjectUndo("Add To Group");
+                        UnityEditor.Undo.SetCurrentGroupName("Add To Group");
+                    }
                     group.innerNodeGUIDs.Add(node.nodeTarget.GUID);
+                    if (owner != null && owner.graph != null)
+                        UnityEditor.EditorUtility.SetDirty(owner.graph);
+                }
             }
             base.OnElementsAdded(elements);
         }
 
         protected override void OnElementsRemoved(IEnumerable<GraphElement> elements)
         {
-            // Only remove the nodes when the group exists in the hierarchy
-            if (parent != null)
+            // Only remove the nodes when the group exists in the hierarchy and not during a reload
+            if (parent != null && !owner.isReloading)
             {
                 foreach (var elem in elements)
                 {
                     if (elem is BaseNodeView nodeView)
                     {
-                        group.innerNodeGUIDs.Remove(nodeView.nodeTarget.GUID);
+                        if (group.innerNodeGUIDs.Contains(nodeView.nodeTarget.GUID))
+                        {
+                            if (!owner.isGrouping)
+                            {
+                                owner.RegisterCompleteObjectUndo("Remove From Group");
+                                UnityEditor.Undo.SetCurrentGroupName("Remove From Group");
+                            }
+                            
+                            group.innerNodeGUIDs.Remove(nodeView.nodeTarget.GUID);
+                            if (owner != null && owner.graph != null)
+                                UnityEditor.EditorUtility.SetDirty(owner.graph);
+                        }
                     }
                 }
             }
@@ -102,12 +124,14 @@ namespace GraphProcessor
 
         public void UpdateGroupColor(Color newColor)
         {
+			owner.RegisterCompleteObjectUndo("Change Group Color");
             group.color = newColor;
             style.backgroundColor = newColor;
         }
 
         void TitleChangedCallback(ChangeEvent< string > e)
         {
+			owner.RegisterCompleteObjectUndo("Change Group Title");
             group.title = e.newValue;
         }
 
@@ -115,7 +139,8 @@ namespace GraphProcessor
 		{
 			base.SetPosition(newPos);
 
-			group.position = newPos;
+			if (owner == null || !owner.isReloading)
+				group.position = newPos;
 		}
 	}
 }
