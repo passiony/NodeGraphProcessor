@@ -86,7 +86,6 @@ namespace GraphProcessor
 
 			if (!node.deletable)
 				capabilities &= ~Capabilities.Deletable;
-			// Note that the Renamable capability is useless right now as it haven't been implemented in Graphview
 			if (node.isRenamable)
 				capabilities |= Capabilities.Renamable;
 
@@ -114,7 +113,6 @@ namespace GraphProcessor
 			InitializeView();
 			InitializePorts();
 
-			// If the standard Enable method is still overwritten, we call it
 			if (nodeTarget.expanded)
 			{
 				if (GetType().GetMethod(nameof(Enable), new Type[] { }).DeclaringType != typeof(BaseNodeView))
@@ -188,7 +186,6 @@ namespace GraphProcessor
             
 			AddInputContainer();
 
-			// Add renaming capability
 			if ((capabilities & Capabilities.Renamable) != 0)
 				SetupRenamableTitle();
 		}
@@ -251,7 +248,6 @@ namespace GraphProcessor
 		{
 		}
 
-		// Workaround for bug in GraphView that makes the node selection border way too big
 		VisualElement selectionBorder, nodeBorder;
 		internal void EnableSyncSelectionBorderHeight()
 		{
@@ -262,7 +258,6 @@ namespace GraphProcessor
 
 				if (selectionBorder != null && nodeBorder != null)
 				{
-					// Performance: Using event instead of Every(17) timer
 					nodeBorder.RegisterCallback<GeometryChangedEvent>(evt => {
 						if (selectionBorder != null && nodeBorder != null)
 							selectionBorder.style.height = nodeBorder.localBound.height;
@@ -372,54 +367,97 @@ namespace GraphProcessor
 		public void AlignFlowSelectedNodes()
 		{
 			if (owner == null) return;
-			var selectedNodes = owner.selection.Where(e => e is BaseNodeView).Cast<BaseNodeView>().ToList();
-			if (selectedNodes.Count < 2) return;
+			var initialSelection = owner.selection.OfType<BaseNodeView>().ToList();
+			if (initialSelection.Count == 0) return;
 
-			var nodeDepths = new Dictionary<BaseNodeView, int>();
-			
-			int GetDepth(BaseNodeView node, HashSet<BaseNodeView> visited)
+			owner.RegisterCompleteObjectUndo("Align Flow Tree");
+
+			List<BaseNodeView> GetChildren(BaseNodeView node)
 			{
-				if (nodeDepths.TryGetValue(node, out int depth)) return depth;
-				if (visited.Contains(node)) return 0;
-
-				visited.Add(node);
-				int maxInputDepth = -1;
-
-				foreach (var port in node.inputPortViews)
-				{
-					foreach (var edge in port.GetEdges())
-					{
-						var inputNodeView = edge.output.node as BaseNodeView;
-						if (selectedNodes.Contains(inputNodeView))
-							maxInputDepth = Mathf.Max(maxInputDepth, GetDepth(inputNodeView, visited));
-					}
-				}
-
-				int result = maxInputDepth + 1;
-				nodeDepths[node] = result;
-				return result;
+				return node.outputPortViews
+					.SelectMany(p => p.GetEdges())
+					.Select(e => e.input.node as BaseNodeView)
+					.Where(n => n != null)
+					.Distinct()
+					.OrderBy(n => n.GetPosition().y) 
+					.ToList();
 			}
 
-			foreach (var node in selectedNodes)
-				GetDepth(node, new HashSet<BaseNodeView>());
-
-			selectedNodes.Sort((a, b) => {
-				int depthA = nodeDepths[a];
-				int depthB = nodeDepths[b];
-				if (depthA != depthB) return depthA.CompareTo(depthB);
-				return a.GetPosition().x.CompareTo(b.GetPosition().x);
-			});
-
-			owner.RegisterCompleteObjectUndo("Align Flow");
-
-			Vector2 startPos = selectedNodes[0].GetPosition().position;
-			float currentX = startPos.x;
-
-			foreach (var node in selectedNodes)
+			HashSet<BaseNodeView> involvedNodes = new HashSet<BaseNodeView>();
+			void CollectDownstream(BaseNodeView node)
 			{
+				if (involvedNodes.Contains(node)) return;
+				involvedNodes.Add(node);
+				foreach (var child in GetChildren(node)) CollectDownstream(child);
+			}
+			foreach (var selected in initialSelection) CollectDownstream(selected);
+
+			var roots = involvedNodes.Where(n => 
+				!n.inputPortViews.Any(p => p.GetEdges().Any(e => involvedNodes.Contains(e.output.node as BaseNodeView)))
+			).OrderBy(n => n.GetPosition().y).ToList();
+
+			float verticalSpacing = 30f;
+			float horizontalSpacing = 320f; 
+
+			Dictionary<BaseNodeView, float> subtreeHeights = new Dictionary<BaseNodeView, float>();
+			float GetSubtreeHeight(BaseNodeView node, HashSet<BaseNodeView> visited)
+			{
+				if (visited.Contains(node)) return subtreeHeights.ContainsKey(node) ? subtreeHeights[node] : 0;
+				visited.Add(node);
+
+				var children = GetChildren(node).Where(involvedNodes.Contains).ToList();
+				float nodeHeight = node.GetPosition().height;
+
+				if (children.Count == 0)
+				{
+					subtreeHeights[node] = nodeHeight;
+					return nodeHeight;
+				}
+
+				float childrenTotalHeight = 0;
+				foreach (var child in children)
+					childrenTotalHeight += GetSubtreeHeight(child, visited) + verticalSpacing;
+				
+				childrenTotalHeight -= verticalSpacing; 
+
+				float finalHeight = Mathf.Max(nodeHeight, childrenTotalHeight);
+				subtreeHeights[node] = finalHeight;
+				return finalHeight;
+			}
+
+			HashSet<BaseNodeView> h1 = new HashSet<BaseNodeView>();
+			foreach (var root in roots) GetSubtreeHeight(root, h1);
+
+			HashSet<BaseNodeView> h2 = new HashSet<BaseNodeView>();
+			void ApplyLayout(BaseNodeView node, float x, float yCenter, HashSet<BaseNodeView> visited)
+			{
+				if (visited.Contains(node)) return;
+				visited.Add(node);
+
 				Rect rect = node.GetPosition();
-				node.SetPosition(new Rect(currentX, startPos.y, rect.width, rect.height));
-				currentX += rect.width + 50; 
+				node.SetPosition(new Rect(x, yCenter - rect.height / 2f, rect.width, rect.height));
+
+				var children = GetChildren(node).Where(involvedNodes.Contains).ToList();
+				if (children.Count == 0) return;
+
+				float totalSpaceForChildren = 0;
+				foreach (var child in children) totalSpaceForChildren += subtreeHeights[child] + verticalSpacing;
+				totalSpaceForChildren -= verticalSpacing;
+
+				float currentChildTopY = yCenter - totalSpaceForChildren / 2f;
+
+				foreach (var child in children)
+				{
+					float childSubtreeHeight = subtreeHeights[child];
+					float childCenterY = currentChildTopY + childSubtreeHeight / 2f;
+					ApplyLayout(child, x + horizontalSpacing, childCenterY, visited);
+					currentChildTopY += childSubtreeHeight + verticalSpacing;
+				}
+			}
+
+			foreach (var root in roots)
+			{
+				ApplyLayout(root, root.GetPosition().x, root.GetPosition().center.y, h2);
 			}
 		}
 
@@ -511,7 +549,6 @@ namespace GraphProcessor
 				nodeTarget.onMessageRemoved -= RemoveMessageView;
 			}
 
-			// Release VisualElement references for GC
 			fieldControlsMap.Clear();
 			visibleConditions.Clear();
 			hideElementIfConnected.Clear();
