@@ -116,6 +116,7 @@ namespace GraphProcessor
 			if (name != null)
 				portName = name;
 			visualClass = "Port_" + portType.Name;
+			AddToClassList("Port_" + portType.Name);
 			tooltip = portData.tooltip;
 		}
 

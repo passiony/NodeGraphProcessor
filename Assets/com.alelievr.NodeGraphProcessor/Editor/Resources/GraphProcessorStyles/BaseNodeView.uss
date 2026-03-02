@@ -30,7 +30,9 @@
 #contents #top .true #connector, #contents #top .true #connector #cap,
 #contents #top .false #connector, #contents #top .false #connector #cap,
 #contents #top .loopBody #connector, #contents #top .loopBody #connector #cap,
-#contents #top .loopCompleted #connector, #contents #top .loopCompleted #connector #cap {
+#contents #top .loopCompleted #connector, #contents #top .loopCompleted #connector #cap,
+PortView.Port_ConditionalLink > #connector, 
+PortView.Port_ConditionalLink > #connector > #cap {
     border-radius: 0px;
 }
 
