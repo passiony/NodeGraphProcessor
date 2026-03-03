@@ -92,6 +92,7 @@ namespace GraphProcessor
 			node.onMessageAdded += AddMessageView;
 			node.onMessageRemoved += RemoveMessageView;
 			node.onPortsUpdated += a => schedule.Execute(_ => UpdatePortsForField(a)).ExecuteLater(0);
+			NodeRuntimeDebugger.onNodeStatusChanged += HandleNodeStatusChanged;
 
 			if (cachedBaseNodeStyle == null)
 				cachedBaseNodeStyle = Resources.Load<StyleSheet>(baseNodeStyle);
@@ -532,6 +533,61 @@ namespace GraphProcessor
 		public void Highlight() => AddToClassList("Highlight");
 		public void UnHighlight() => RemoveFromClassList("Highlight");
 
+		void HandleNodeStatusChanged(BaseGraph graph, string nodeGuid, NodeRunStatus status)
+		{
+			if (nodeTarget == null || graph != owner.graph || nodeTarget.GUID != nodeGuid)
+				return;
+			
+			UpdateStatus(status);
+		}
+
+		private IVisualElementScheduledItem pulseSchedule;
+		private float pulseTimer = 0;
+
+		public virtual void UpdateStatus(NodeRunStatus status)
+		{
+			if (pulseSchedule != null)
+			{
+				pulseSchedule.Pause();
+				RemoveFromClassList("running");
+				pulseTimer = 0;
+			}
+
+			switch (status)
+			{
+				case NodeRunStatus.Running:
+					if (pulseSchedule == null)
+					{
+						// Check every 100ms for more precise timing
+						pulseSchedule = schedule.Execute(() => {
+							pulseTimer += 0.1f;
+							bool isBright = this.ClassListContains("running");
+
+							if (isBright && pulseTimer >= 1.5f) // Stay bright for 1.5 seconds
+							{
+								RemoveFromClassList("running");
+								pulseTimer = 0;
+							}
+							else if (!isBright && pulseTimer >= 0.5f) // Stay dim for only 0.5 seconds
+							{
+								AddToClassList("running");
+								pulseTimer = 0;
+							}
+						}).Every(100);
+					}
+					else
+					{
+						pulseSchedule.Resume();
+					}
+					AddToClassList("running");
+					pulseTimer = 0;
+					break;
+				default:
+					RemoveFromClassList("running");
+					break;
+			}
+		}
+
 		#endregion
 
 		#region Callbacks & Overrides
@@ -542,6 +598,7 @@ namespace GraphProcessor
 		public virtual void Disable()
 		{
 			Undo.undoRedoPerformed -= UpdateFieldValues;
+			NodeRuntimeDebugger.onNodeStatusChanged -= HandleNodeStatusChanged;
 
 			if (nodeTarget != null)
 			{

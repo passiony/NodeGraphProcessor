@@ -31,3 +31,11 @@
 .edge_18 { --edge-width: 18; } .edge_18:hover { --edge-width: 20; }
 .edge_19 { --edge-width: 19; } .edge_19:hover { --edge-width: 21; }
 .edge_20 { --edge-width: 20; } .edge_20:hover { --edge-width: 22; }
+
+.flow-dot {
+    width: 8px;
+    height: 8px;
+    background-color: #FFFFFF;
+    border-radius: 4px;
+    position: absolute;
+}

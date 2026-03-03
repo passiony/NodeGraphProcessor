@@ -40,6 +40,21 @@ PortView.Port_ConditionalLink > #connector > #cap {
     background-color: rgba(0, 63, 63, 0.8);
 }
 
+.running #selection-border {
+    border-color: #00CCFF;
+    border-width: 2px;
+    transition: border-color 0.5s ease-in-out;
+}
+
+.running #node-border {
+    border-color: #00CCFF;
+    transition: border-color 0.5s ease-in-out;
+}
+
+#selection-border, #node-border {
+    transition: border-color 0.5s ease-in-out;
+}
+
 ParameterNodeView #title {
     height: 16px;
 }

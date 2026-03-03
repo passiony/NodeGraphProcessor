@@ -152,16 +152,8 @@ namespace GraphProcessor
 
 		void LinkGraphWindowToScene(Scene scene)
 		{
-			EditorSceneManager.sceneClosed += CloseWindowWhenSceneIsClosed;
-
-			void CloseWindowWhenSceneIsClosed(Scene closedScene)
-			{
-				if (scene == closedScene)
-				{
-					Close();
-					EditorSceneManager.sceneClosed -= CloseWindowWhenSceneIsClosed;
-				}
-			}
+			// We removed the automatic Close() here because it causes the window to close
+			// every time the user enters or exits Play Mode.
 		}
 
 		public virtual void OnGraphDeleted()
